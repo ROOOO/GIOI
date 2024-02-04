@@ -39,10 +39,39 @@ int main(){
     // matrix output
     std::cout << "Example of output \n";
     std::cout << i << std::endl;
+    std::cout << j << std::endl;
     // matrix add i + j
+    std::cout << i + j << std::endl;
     // matrix scalar multiply i * 2.0
+    std::cout << i * 2.0f << std::endl;
     // matrix multiply i * j
+    std::cout << i * j << std::endl;
     // matrix multiply vector i * v
+    std::cout << i * v << std::endl;
 
+    Eigen::Vector3f p(2.0f, 1.0f, 1.0f);
+    float r45 = 45.0f / 180.0f * 3.141592f;
+    float fCos = std::cos(r45);
+    float fSin = std::sin(r45);
+
+    {
+        Eigen::Matrix3f r;
+        r << fCos, -fSin, 0, fSin, fCos, 0, 0, 0, 1;
+        std::cout << r << std::endl;
+        // rotate 45
+        Eigen::Matrix3f t;
+        // transform (1, 2)
+        t << 1, 0, 1, 0, 1, 2, 0, 0, 1;
+        std::cout << t << std::endl;
+        std::cout << t * r * p << std::endl;
+    }
+
+    {
+        Eigen::Matrix3f rt;
+        // rotate 45 and transform (1, 2)
+        rt << fCos, -fSin, 1, fSin, fCos, 2, 0, 0, 1;
+        std::cout << rt << std::endl;
+        std::cout << rt * p << std::endl;
+    }
     return 0;
 }
