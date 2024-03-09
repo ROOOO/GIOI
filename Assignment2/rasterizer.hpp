@@ -93,6 +93,11 @@ namespace rst
         std::vector<Eigen::Vector3f> frame_buf;
 
         std::vector<float> depth_buf;
+
+        int aa_count = 4;
+        std::vector<Eigen::Vector3f> aa_frame_buf;
+        std::vector<float> aa_depth_buf;
+
         int get_index(int x, int y);
 
         int width, height;

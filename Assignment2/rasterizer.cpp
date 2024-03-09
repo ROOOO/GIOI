@@ -115,9 +115,10 @@ void rst::rasterizer::draw(pos_buf_id pos_buffer, ind_buf_id ind_buffer, col_buf
 }
 
 //Screen space rasterization
-void rst::rasterizer::rasterize_triangle(const Triangle& t) {
+void rst::rasterizer::rasterize_triangle(const Triangle& t)
+{
     auto v = t.toVector4();
-    
+
     // Find out the bounding box of current triangle.
     // iterate through the pixel and find if the current pixel is inside the triangle
     const Vector3f &v0 = t.v[0], v1 = t.v[1], v2 = t.v[2];
@@ -129,25 +130,40 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t) {
     {
         for (int y = (int) std::round(ymin); y < (int) std::round(ymax); ++y)
         {
-            if (!insideTriangle((int) x, (int) y, t.v))
+            const Vector3f& color = t.getColor();
+            float depth = std::numeric_limits<float>::infinity();
+            int aa_x_index[] = {0, 0, 1, 1}, aa_y_index[] = {0, 1, 0, 1};
+            int aa_index = get_index(x, y) * aa_count;
+            for (int i = 0; i < aa_count; ++i)
             {
-                continue;
+                float aa_x = x + aa_x_index[i], aa_y = y + aa_y_index[i];
+                if (!insideTriangle((int) aa_x, (int) aa_y, t.v))
+                {
+                    continue;
+                }
+
+                // If so, use the following code to get the interpolated z value.
+                auto [alpha, beta, gamma] = computeBarycentric2D(aa_x, aa_y, t.v);
+                float w_reciprocal = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+                float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+                z_interpolated *= w_reciprocal;
+
+                // set the current pixel (use the set_pixel function) to the color of the triangle (use getColor function) if it should be painted.
+                if (-z_interpolated >= aa_depth_buf[aa_index + i])
+                {
+                    continue;
+                }
+                depth = std::min(depth, -z_interpolated);
+                aa_depth_buf[aa_index + i] = depth;
+                aa_frame_buf[aa_index + i] = color / aa_count;
             }
 
-            // If so, use the following code to get the interpolated z value.
-            auto [alpha, beta, gamma] = computeBarycentric2D(x, y, t.v);
-            float w_reciprocal = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
-            float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
-            z_interpolated *= w_reciprocal;
-
-            int index = get_index(x, y);
-            // set the current pixel (use the set_pixel function) to the color of the triangle (use getColor function) if it should be painted.
-            if (-z_interpolated >= depth_buf[index]) {
-                continue;
+            Vector3f aa_color{0, 0, 0};
+            for (int i = 0; i < aa_count; ++i)
+            {
+                aa_color += aa_frame_buf[aa_index + i];
             }
-
-            depth_buf[index] = -z_interpolated;
-            set_pixel({x, y, z_interpolated}, t.getColor());
+            set_pixel({x, y, depth}, aa_color);
         }
     }
 }
@@ -172,17 +188,21 @@ void rst::rasterizer::clear(rst::Buffers buff)
     if ((buff & rst::Buffers::Color) == rst::Buffers::Color)
     {
         std::fill(frame_buf.begin(), frame_buf.end(), Eigen::Vector3f{0, 0, 0});
+        std::fill(aa_frame_buf.begin(), aa_frame_buf.end(), Eigen::Vector3f{0, 0, 0});
     }
     if ((buff & rst::Buffers::Depth) == rst::Buffers::Depth)
     {
         std::fill(depth_buf.begin(), depth_buf.end(), std::numeric_limits<float>::infinity());
+        std::fill(aa_depth_buf.begin(), aa_depth_buf.end(), std::numeric_limits<float>::infinity());
     }
 }
 
 rst::rasterizer::rasterizer(int w, int h) : width(w), height(h)
 {
     frame_buf.resize(w * h);
+    aa_frame_buf.resize(w * h * aa_count);
     depth_buf.resize(w * h);
+    aa_depth_buf.resize(w * h * aa_count);
 }
 
 int rst::rasterizer::get_index(int x, int y)
