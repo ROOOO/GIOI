@@ -280,7 +280,49 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eig
     // Use: Instead of passing the triangle's color directly to the frame buffer, pass the color to the shaders first to get the final color;
     // Use: auto pixel_color = fragment_shader(payload);
 
- 
+    // Find out the bounding box of current triangle.
+    // iterate through the pixel and find if the current pixel is inside the triangle
+    const Vector4f &a= t.a(), &b = t.b(), &c = t.c();
+    float xmin = std::floor(std::min({a.x(), b.x(), c.x()}));
+    float xmax = std::ceil(std::max({a.x(), b.x(), c.x()}));
+    float ymin = std::floor(std::min({a.y(), b.y(), c.y()}));
+    float ymax = std::ceil(std::max({a.y(), b.y(), c.y()}));
+    for (int x = (int) xmin; x < (int) xmax; ++x)
+    {
+        for (int y = (int) ymin; y < (int) ymax; ++y)
+        {
+            if (!insideTriangle(x, y, t.v))
+            {
+                continue;
+            }
+
+            // If so, use the following code to get the interpolated z value.
+            auto [alpha, beta, gamma] = computeBarycentric2D(x, y, t.v);
+            float w_reciprocal = 1.0 / (alpha / a.w() + beta / b.w() + gamma / c.w());
+            float z_interpolated = alpha * a.z() / a.w() + beta * b.z() / b.w() + gamma * c.z() / c.w();
+            z_interpolated *= w_reciprocal;
+
+            // set the current pixel (use the set_pixel function) to the color of the triangle (use getColor function) if it should be painted.
+            unsigned index = get_index(x, y);
+            if (-z_interpolated >= depth_buf[index])
+            {
+                continue;
+            }
+            depth_buf[index] = -z_interpolated;
+
+            const auto& color = t.color;
+            Vector3f interpolated_color = interpolate(alpha, beta, gamma, color[0], color[1], color[2], 1.0f);
+            const auto& normal = t.normal;
+            Vector3f interpolated_normal = interpolate(alpha, beta, gamma, normal[0], normal[1], normal[2], 1.0f);
+            interpolated_normal = interpolated_normal.normalized();
+            Vector2f interpolated_texcoords{};
+            Vector3f interpolated_shadingcoords = interpolate(alpha, beta, gamma, view_pos[0], view_pos[1], view_pos[2], 1.0f);
+            fragment_shader_payload payload(interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, texture ? &*texture : nullptr);
+            payload.view_pos = interpolated_shadingcoords;
+            auto pixel_color = fragment_shader(payload);
+            set_pixel({x, y}, pixel_color);
+        }
+    }
 }
 
 void rst::rasterizer::set_model(const Eigen::Matrix4f& m)
