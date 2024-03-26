@@ -240,6 +240,10 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
 
 Eigen::Vector3f bump_fragment_shader(const fragment_shader_payload& payload)
 {
+    if (!payload.texture)
+    {
+        return {0, 0, 0};
+    }
     
     Eigen::Vector3f ka = Eigen::Vector3f(0.005, 0.005, 0.005);
     Eigen::Vector3f kd = payload.color;
@@ -261,15 +265,30 @@ Eigen::Vector3f bump_fragment_shader(const fragment_shader_payload& payload)
 
     float kh = 0.2, kn = 0.1;
 
-    // TODO: Implement bump mapping here
     // Let n = normal = (x, y, z)
+    Eigen::Vector3f n = normal;
     // Vector t = (x*y/sqrt(x*x+z*z),sqrt(x*x+z*z),z*y/sqrt(x*x+z*z))
+    float x = n.x(), y = n.y(), z = n.z();
+    float factor = std::sqrt(x * x + z * z);
+    Eigen::Vector3f t = {x * y / factor, factor, z * y / factor};
     // Vector b = n cross product t
+    Eigen::Vector3f b = n.cross(t);
     // Matrix TBN = [t b n]
+    Eigen::Matrix3f TBN;
+    TBN << t.x(), b.x(), n.x(),
+           t.y(), b.y(), n.y(),
+           t.z(), b.z(), n.z();
+    const Vector2f& tex_coords = payload.tex_coords;
+    float u = tex_coords[0], v = tex_coords[1];
+    float w = (float) payload.texture->width, h = (float) payload.texture->height;
     // dU = kh * kn * (h(u+1/w,v)-h(u,v))
+    float dU = kh * kn * (payload.texture->getColor(u + 1.0f / w, v).norm() - payload.texture->getColor(u, v).norm());
     // dV = kh * kn * (h(u,v+1/h)-h(u,v))
+    float dV = kh * kn * (payload.texture->getColor(u, v + 1.0f / h).norm() - payload.texture->getColor(u, v).norm());
     // Vector ln = (-dU, -dV, 1)
+    Eigen::Vector3f ln = {-dU, -dV, 1.0f};
     // Normal n = normalize(TBN * ln)
+    normal = TBN * ln;
 
 
     Eigen::Vector3f result_color = {0, 0, 0};
@@ -308,10 +327,10 @@ int main(int argc, const char** argv)
 
     rst::rasterizer r(700, 700);
 
-    auto texture_path = "spot_texture.png";
+    auto texture_path = "hmap.jpg";
     r.set_texture(Texture(obj_path + texture_path));
 
-    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = texture_fragment_shader;
+    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = bump_fragment_shader;
 
     if (argc >= 2)
     {
