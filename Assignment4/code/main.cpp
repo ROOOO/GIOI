@@ -53,6 +53,44 @@ cv::Point2f recursive_bezier(const std::vector<cv::Point2f> &control_points, flo
     return recursive_bezier(new_control_points, t);
 }
 
+void AntiAliasing(const cv::Point2f& point, cv::Mat& window)
+{
+    float cx = point.x, cy = point.y;
+    int x0 = static_cast<int>(cx - 0.5f);
+    int x1 = static_cast<int>(cx + 0.5f);
+    int y0 = static_cast<int>(cy - 0.5f);
+    int y1 = static_cast<int>(cy + 0.5f);
+    std::vector<cv::Point2f> points(4);
+    points[0].x = x0; points[0].y = y0;
+    points[1].x = x1; points[1].y = y0;
+    points[2].x = x0; points[2].y = y1;
+    points[3].x = x1; points[3].y = y1;
+
+    const cv::Point2f& nearest_point = points[3];
+    window.at<cv::Vec3b>(nearest_point.y, nearest_point.x)[1] = 255;
+
+    cv::Point2f dist_vec = point - nearest_point;
+    float dist_sqr = dist_vec.dot(dist_vec);
+    if (dist_sqr < FLT_EPSILON)
+    {
+        return;
+    }
+    float dist = sqrt(dist_sqr);
+
+    for (int i = 0; i < 3; ++i)
+    {
+        const cv::Point2f& p = points[i];
+        cv::Vec3b& color = window.at<cv::Vec3b>(p.y, p.x);
+        if (color[1] == 255)
+        {
+            return;
+        }
+        cv::Point2f v = p - point;
+        float d = sqrt(v.dot(v));
+        color[1] = dist / d * 255;
+    }
+}
+
 void bezier(const std::vector<cv::Point2f> &control_points, cv::Mat &window) 
 {
     // Iterate through all t = 0 to t = 1 with small steps, and call de Casteljau's
@@ -65,7 +103,7 @@ void bezier(const std::vector<cv::Point2f> &control_points, cv::Mat &window)
     for (float t = 0.0f; t < 1.0f; t += 0.001f)
     {
         cv::Point2f point = recursive_bezier(control_points, t);
-        window.at<cv::Vec3b>(point.y, point.x)[1] = 255;
+        AntiAliasing(point, window);
     }
 }
 
@@ -80,7 +118,12 @@ int main()
     int key = -1;
     while (key != 27) 
     {
-        for (auto &point : control_points) 
+        control_points.push_back({411, 396});
+        control_points.push_back({263, 490});
+        control_points.push_back({651, 61});
+        control_points.push_back({640, 654});
+
+        for (auto &point : control_points)
         {
             cv::circle(window, point, 3, {255, 255, 255}, 3);
         }
