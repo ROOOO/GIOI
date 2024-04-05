@@ -25,8 +25,60 @@ BVHAccel::BVHAccel(std::vector<Object*> p, int maxPrimsInNode,
         hrs, mins, secs);
 }
 
+static Bounds3 getCentroidBounds(const std::vector<Object*>& objects, unsigned begin, unsigned end)
+{
+    Bounds3 bounds;
+    size_t size = std::min(end, static_cast<unsigned>(objects.size()));
+    for (unsigned i = begin; i < size; ++i)
+    {
+        Object* object = objects[i];
+        if (!object)
+        {
+            continue;
+        }
+        bounds = Union(bounds, object->getBounds().Centroid());
+    }
+    return bounds;
+}
+
+static unsigned getMiddle(BVHAccel::SplitMethod splitMethod, const std::vector<Object*>& objects)
+{
+    unsigned size = objects.size();
+    if (splitMethod != BVHAccel::SplitMethod::SAH)
+    {
+        return size / 2;
+    }
+
+    unsigned mid = 1u;
+    double time_max = std::numeric_limits<double>::max();
+    unsigned num_buckets = 31;
+    for (unsigned i = 1; i < num_buckets; ++i)
+    {
+        unsigned i_mid = size * i / num_buckets;
+        Bounds3 leftBounds = getCentroidBounds(objects, 0, i_mid);
+        Bounds3 rightBounds = getCentroidBounds(objects, i_mid, size);
+        double leftArea = leftBounds.SurfaceArea();
+        double rightArea = rightBounds.SurfaceArea();
+        double totalArea = leftArea + rightArea;
+        double inv_totalArea = 1.0 / totalArea;
+
+        double time = leftArea * inv_totalArea * i_mid + rightArea * inv_totalArea * (size - i_mid);
+        if (time < time_max)
+        {
+            time_max = time;
+            mid = i_mid;
+        }
+    }
+    return mid;
+}
+
 BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
 {
+    if (objects.empty())
+    {
+        return nullptr;
+    }
+
     BVHBuildNode* node = new BVHBuildNode();
 
     // Compute bounds of all primitives in BVH node
@@ -75,8 +127,9 @@ BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
             break;
         }
 
+        unsigned middle = getMiddle(splitMethod, objects);
         auto beginning = objects.begin();
-        auto middling = objects.begin() + (objects.size() / 2);
+        auto middling = objects.begin() + middle;
         auto ending = objects.end();
 
         auto leftshapes = std::vector<Object*>(beginning, middling);
