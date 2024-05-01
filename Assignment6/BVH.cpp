@@ -164,7 +164,7 @@ Intersection BVHAccel::getIntersection(BVHBuildNode* node, const Ray& ray) const
     }
 
     const Vector3f& dir = ray.direction;
-    if (!node->bounds.IntersectP(ray, ray.direction_inv, {dir.x > 0, dir.y > 0, dir.z > 0}))
+    if (!node->bounds.IntersectP(ray, ray.direction_inv, {dir.x < 0, dir.y < 0, dir.z < 0}))
     {
         return {};
     }
