@@ -3,6 +3,7 @@
 //
 
 #include <fstream>
+#include <future>
 #include "Scene.hpp"
 #include "Renderer.hpp"
 
@@ -21,26 +22,49 @@ void Renderer::Render(const Scene& scene)
     float scale = tan(deg2rad(scene.fov * 0.5));
     float imageAspectRatio = scene.width / (float)scene.height;
     Vector3f eye_pos(278, 273, -800);
-    int m = 0;
+
+    int num_threads = static_cast<int>(std::thread::hardware_concurrency());
+    std::vector<std::future<void>> futures;
+    std::mutex mutex;
+    std::atomic<int> completed_lines(0);
 
     // change the spp value to change sample ammount
     int spp = 16;
     std::cout << "SPP: " << spp << "\n";
-    for (uint32_t j = 0; j < scene.height; ++j) {
-        for (uint32_t i = 0; i < scene.width; ++i) {
-            // generate primary ray direction
-            float x = (2 * (i + 0.5) / (float)scene.width - 1) *
-                      imageAspectRatio * scale;
-            float y = (1 - 2 * (j + 0.5) / (float)scene.height) * scale;
 
-            Vector3f dir = normalize(Vector3f(-x, y, 1));
-            for (int k = 0; k < spp; k++){
-                framebuffer[m] += scene.castRay(Ray(eye_pos, dir), 0) / spp;  
-            }
-            m++;
-        }
-        UpdateProgress(j / (float)scene.height);
+    auto render_task = [&](int start, int end) {
+      for (uint32_t j = start; j < end; ++j) {
+          for (uint32_t i = 0; i < scene.width; ++i) {
+              // generate primary ray direction
+              float x = (2 * (i + 0.5) / (float)scene.width - 1) *
+                        imageAspectRatio * scale;
+              float y = (1 - 2 * (j + 0.5) / (float)scene.height) * scale;
+
+              Vector3f dir = normalize(Vector3f(-x, y, 1));
+              uint32_t m = j * scene.width + i;
+              for (int k = 0; k < spp; k++){
+                  framebuffer[m] += scene.castRay(Ray(eye_pos, dir), 0) / spp;
+              }
+          }
+          {
+              std::lock_guard<std::mutex> lock(mutex);
+              ++completed_lines;
+              UpdateProgress((float)completed_lines / (float)scene.height);
+          }
+      }
+    };
+
+    for (int i = 0; i < num_threads; ++i)
+    {
+        int start = i * scene.height / num_threads;
+        int end = std::min((i + 1) * scene.height / num_threads, scene.height);
+        futures.emplace_back(std::async(std::launch::async, render_task, start, end));
     }
+    for (auto& future : futures)
+    {
+        future.get();
+    }
+
     UpdateProgress(1.f);
 
     // save framebuffer to file
